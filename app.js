@@ -170,26 +170,60 @@ function openModelModal(){
   $$('.model-option').forEach(x=>x.onclick=async()=>{await saveSetting('modelId',x.dataset.model);state.engine=null;state.engineModel=null;closeModal();updateModelPill();renderSettings();toast('Modelo cambiado')});
 }
 $('#chooseModel').onclick=openModelModal;$('#modelPill').onclick=openModelModal;
-$('#loadModel').onclick=async()=>{try{await ensureEngine();toast('IA lista')}catch(e){showError(e)}};
+$('#loadModel').onclick=async()=>{
+  const btn=$('#loadModel');
+  if(btn.disabled)return;
+  const original=btn.textContent;
+  btn.disabled=true;
+  btn.textContent='Preparando IA…';
+  toast('Iniciando IA local…');
+  try{
+    await ensureEngine();
+    toast('IA lista');
+  }catch(e){
+    setProgress(false);
+    showError(e);
+  }finally{
+    btn.disabled=false;
+    btn.textContent=original;
+  }
+};
 function updateModelPill(){const m=MODELS.find(x=>x.id===state.settings.modelId);$('#modelPill').textContent=state.engine?`IA: ${m?.name||'lista'}`:`IA: ${m?.name||'sin cargar'}`}
 function setProgress(show,text='',pct=0){$('#progressWrap').classList.toggle('show',show);$('#progressText').textContent=text;$('#progressBar').style.width=`${Math.max(0,Math.min(100,pct))}%`}
 async function ensureEngine(){
   if(state.engine && state.engineModel===state.settings.modelId)return state.engine;
-  if(!navigator.gpu)throw new Error('WebGPU no está disponible. En iPhone necesitas Safari/iOS con WebGPU activo (iOS 26 o posterior).');
-  setProgress(true,'Preparando motor de IA…',2);
-  const webllm=await import('https://esm.run/@mlc-ai/web-llm@0.2.84');
-  const progressCb=(p)=>{const raw=Number(p.progress||0);setProgress(true,p.text||'Descargando modelo…',raw*100)};
+  if(!navigator.gpu)throw new Error('WebGPU no está disponible en esta instalación. Abre RoleMind con iOS 26/Safari 26 o posterior y vuelve a probar.');
+
+  setProgress(true,'1/3 · Cargando WebLLM…',2);
+  let webllm;
+  try{
+    webllm=await import('https://esm.run/@mlc-ai/web-llm@0.2.84');
+  }catch(importErr){
+    throw new Error('No he podido cargar la librería WebLLM desde Internet. Comprueba la conexión Wi‑Fi y vuelve a intentarlo. Detalle: '+(importErr?.message||importErr));
+  }
+
+  setProgress(true,'2/3 · Preparando el motor local…',4);
+  const progressCb=(p)=>{
+    const raw=Number(p?.progress||0);
+    const pct=Number.isFinite(raw)?Math.max(5,raw*100):5;
+    setProgress(true,p?.text||'3/3 · Descargando el modelo al iPhone…',pct);
+  };
+
   let worker=null;
   try{
-    worker=new Worker(new URL('./ai-worker.js',import.meta.url),{type:'module'});
+    worker=new Worker(new URL('./ai-worker.js?v=2.1',import.meta.url),{type:'module'});
     state.engine=await webllm.CreateWebWorkerMLCEngine(worker,state.settings.modelId,{initProgressCallback:progressCb});
   }catch(workerErr){
     console.warn('Web Worker no disponible; probando motor directo',workerErr);
     try{worker?.terminate()}catch{}
-    setProgress(true,'Probando modo compatible de IA…',5);
+    setProgress(true,'Modo compatible · preparando IA directamente…',5);
     state.engine=await webllm.CreateMLCEngine(state.settings.modelId,{initProgressCallback:progressCb});
   }
-  state.engineModel=state.settings.modelId;setProgress(false);updateModelPill();return state.engine;
+
+  state.engineModel=state.settings.modelId;
+  setProgress(false);
+  updateModelPill();
+  return state.engine;
 }
 
 // ---------- Chat ----------

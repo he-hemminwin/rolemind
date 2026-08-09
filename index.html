@@ -54,6 +54,7 @@
     <button id="modelPill" class="pill">IA: sin cargar</button>
     <button id="quickHelp" class="iconbtn" aria-label="Ayuda">?</button>
   </header>
+  <div id="progressWrap" class="progresswrap"><div id="progressText" class="statusline"></div><div class="progress"><div id="progressBar"></div></div></div>
 
   <main class="main">
     <section id="viewCharacters" class="view active">
@@ -114,7 +115,6 @@
 
     <section id="viewChat" class="view chatview">
       <div class="chathead"><button id="backFromChat" class="iconbtn">‹</button><div class="grow"><div id="chatTitle" class="sub"></div><div id="chatSubtitle" class="tiny"></div></div><button id="chatOptions" class="iconbtn">⋯</button></div>
-      <div id="progressWrap" class="progresswrap"><div id="progressText" class="statusline"></div><div class="progress"><div id="progressBar"></div></div></div>
       <div id="messages" class="messages"></div>
       <div class="composer"><textarea id="messageInput" class="field" placeholder="Escribe tu parte del rol..."></textarea><button id="sendMessage" class="send">↑</button></div>
     </section>
@@ -130,6 +130,6 @@
 
 <div id="modal" class="modal"><div id="sheet" class="sheet"><div class="handle"></div><div id="sheetContent"></div></div></div>
 <div id="toast" class="toast"></div>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./app.js?v=2.1"></script>
 </body>
 </html>
