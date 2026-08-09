@@ -5,8 +5,9 @@ const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toStri
 const esc = (s='') => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const MODELS = [
-  {id:'Llama-3.2-1B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 1B', note:'Recomendado · más ligero · ~879 MB de VRAM'},
-  {id:'Llama-3.2-3B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 3B', note:'Mejor texto · bastante más pesado · ~2.26 GB de VRAM'},
+  {id:'Llama-3.2-1B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 1B', note:'Seguro · más ligero · ~879 MB de VRAM'},
+  {id:'SmolLM2-1.7B-Instruct-q4f16_1-MLC', name:'SmolLM2 · 1.7B', note:'Prueba recomendada · intermedio · ~1.77 GB de VRAM'},
+  {id:'Llama-3.2-3B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 3B', note:'Muy pesado · ~2.26 GB · puede cerrar Safari en iPhone'},
   {id:'SmolLM2-360M-Instruct-q4f32_1-MLC', name:'SmolLM2 · 360M', note:'Modo emergencia · muy ligero · calidad menor'}
 ];
 
@@ -166,7 +167,7 @@ function renderSettings(){
 $('#autoMemorySwitch').onclick=async()=>{await saveSetting('autoMemory',!state.settings.autoMemory);renderSettings()};
 $('#saveSettings').onclick=async()=>{for(const [k,id] of [['memoryEvery','#memoryEvery'],['globalLength','#globalLength'],['globalInitiative','#globalInitiative'],['globalRomance','#globalRomance'],['globalThoughts','#globalThoughts']])await saveSetting(k,k==='memoryEvery'?Number($(id).value):$(id).value);toast('Ajustes guardados')};
 function openModelModal(){
-  showModal(`<h2>Modelo de IA</h2><div class="muted">Empieza por 1B. Si funciona fluido puedes probar 3B.</div>${MODELS.map(m=>`<div class="model-option ${m.id===state.settings.modelId?'selected':''}" data-model="${m.id}"><strong>${esc(m.name)}</strong><span class="muted">${esc(m.note)}</span></div>`).join('')}<div class="warning muted" style="margin-top:12px">Cambiar de modelo no borra tus chats. El nuevo modelo tendrá que descargarse la primera vez.</div>`);
+  showModal(`<h2>Modelo de IA</h2><div class="muted">En iPhone empieza por 1B. Si funciona, prueba SmolLM2 1.7B. El 3B puede superar la memoria disponible.</div>${MODELS.map(m=>`<div class="model-option ${m.id===state.settings.modelId?'selected':''}" data-model="${m.id}"><strong>${esc(m.name)}</strong><span class="muted">${esc(m.note)}</span></div>`).join('')}<div class="warning muted" style="margin-top:12px">Cambiar de modelo no borra tus chats. El nuevo modelo tendrá que descargarse la primera vez.</div>`);
   $$('.model-option').forEach(x=>x.onclick=async()=>{await saveSetting('modelId',x.dataset.model);state.engine=null;state.engineModel=null;closeModal();updateModelPill();renderSettings();toast('Modelo cambiado')});
 }
 $('#chooseModel').onclick=openModelModal;$('#modelPill').onclick=openModelModal;
@@ -211,7 +212,7 @@ async function ensureEngine(){
 
   let worker=null;
   try{
-    worker=new Worker(new URL('./ai-worker.js?v=2.1',import.meta.url),{type:'module'});
+    worker=new Worker(new URL('./ai-worker.js?v=2.2',import.meta.url),{type:'module'});
     state.engine=await webllm.CreateWebWorkerMLCEngine(worker,state.settings.modelId,{initProgressCallback:progressCb});
   }catch(workerErr){
     console.warn('Web Worker no disponible; probando motor directo',workerErr);
@@ -341,7 +342,7 @@ $('#importBackup').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;t
 // ---------- Help ----------
 $('#quickHelp').onclick=()=>showModal(`<h2>Inicio rápido</h2><div class="card"><b>1. Crea un personaje</b><div class="muted" style="margin-top:5px">Define personalidad, tu personaje y estilo.</div></div><div class="card"><b>2. Crea una conversación</b><div class="muted" style="margin-top:5px">Pon lugar, presentes e hilos abiertos.</div></div><div class="card"><b>3. Carga la IA</b><div class="muted" style="margin-top:5px">Ajustes → Descargar/cargar IA. La primera descarga es grande; usa Wi‑Fi.</div></div><div class="card"><b>4. Rolea</b><div class="muted" style="margin-top:5px">Escribe REP para repetir la última respuesta. Usa 🧠 Recordar en cualquier mensaje para fijar algo manualmente.</div></div><button class="btn primary" style="width:100%" onclick="document.getElementById('modal').classList.remove('show')">Entendido</button>`);
 
-function showError(e){console.error(e);const msg=String(e?.message||e||'Error desconocido');showModal(`<h2>Ha ocurrido un error</h2><div class="card dangertext" style="white-space:pre-wrap">${esc(msg)}</div><div class="muted">Si es durante la carga del modelo, prueba el modelo 1B o el modo 360M y cierra otras apps antes de volver a intentarlo.</div>`)}
+function showError(e){console.error(e);const msg=String(e?.message||e||'Error desconocido');showModal(`<h2>Ha ocurrido un error</h2><div class="card dangertext" style="white-space:pre-wrap">${esc(msg)}</div><div class="muted">Si es durante la carga del modelo, vuelve a Llama 1B. Si 1B funciona, prueba SmolLM2 1.7B. Evita Llama 3B si la app se cierra o vuelve al inicio.</div>`)}
 function renderAll(){renderCharacters();renderChats();renderMemories();renderSettings();updateModelPill()}
 
 // ---------- Boot ----------
