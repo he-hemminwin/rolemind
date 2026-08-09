@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#0c0d12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="RoleMind" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <title>RoleMind</title>
+  <style>
+    :root{--bg:#0c0d12;--panel:#14161d;--panel2:#1b1e27;--line:#2a2e3a;--text:#f5f6fa;--muted:#aeb4c3;--accent:#8a7dff;--accent2:#b9b1ff;--danger:#ff6b7a;--ok:#64d69e;--warn:#ffc46b;--shadow:0 10px 35px #0008}
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;height:100%}
+    body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);overflow:hidden}
+    button,input,textarea,select{font:inherit}
+    button{border:0;color:inherit;background:none}
+    .app{height:100%;display:flex;flex-direction:column}
+    .top{height:58px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:#0c0d12e8;backdrop-filter:blur(16px);z-index:10}
+    .brand{font-weight:800;letter-spacing:-.5px}.brand span{color:var(--accent2)}
+    .grow{flex:1}.pill{padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:13px}
+    .iconbtn{width:40px;height:40px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+    .main{flex:1;min-height:0;position:relative}.view{display:none;height:100%;overflow:auto;padding:14px 14px 95px}.view.active{display:block}
+    .bottom{height:72px;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:#0c0d12f2;backdrop-filter:blur(18px);padding-bottom:max(4px,env(safe-area-inset-bottom));z-index:20}
+    .tab{font-size:11px;color:var(--muted);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px}.tab b{font-size:20px}.tab.active{color:var(--accent2)}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px;box-shadow:0 1px 0 #fff03 inset}
+    .row{display:flex;gap:10px;align-items:center}.row.wrap{flex-wrap:wrap}.row.between{justify-content:space-between}.title{font-weight:800;font-size:20px;margin:4px 0 12px}.sub{font-weight:700;font-size:15px}.muted{color:var(--muted);font-size:13px}.tiny{color:var(--muted);font-size:11px}
+    .btn{padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);font-weight:700}.btn.primary{background:var(--accent);border-color:transparent;color:white}.btn.danger{color:#ffd9dd;border-color:#5a2930}.btn.small{padding:8px 10px;font-size:12px}.btn:disabled{opacity:.45}
+    .field{width:100%;background:#0f1117;color:var(--text);border:1px solid var(--line);border-radius:12px;padding:12px;outline:none}.field:focus{border-color:var(--accent)}textarea.field{min-height:96px;resize:vertical}.label{font-size:12px;color:var(--muted);margin:10px 0 6px;display:block}
+    .character{display:flex;gap:12px;align-items:center}.avatar{width:54px;height:54px;border-radius:16px;background:linear-gradient(135deg,#2e3150,#6f63dc);display:grid;place-items:center;font-weight:900;font-size:20px;flex:0 0 auto}.character h3{margin:0 0 4px;font-size:16px}
+    .badge{display:inline-block;font-size:11px;border:1px solid var(--line);padding:4px 7px;border-radius:999px;color:var(--muted)}
+    .empty{text-align:center;color:var(--muted);padding:55px 22px}.empty .emoji{font-size:42px;margin-bottom:10px}
+    .chatview{padding:0!important;overflow:hidden!important;display:none!important;flex-direction:column}.chatview.active{display:flex!important}.chathead{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:10px}.messages{flex:1;overflow:auto;padding:16px 12px 20px;scroll-behavior:smooth}.bubble{max-width:92%;padding:11px 13px;border-radius:16px;margin:7px 0;white-space:pre-wrap;line-height:1.43;font-size:15px}.bubble.user{margin-left:auto;background:#302b58;border:1px solid #4e4683;border-bottom-right-radius:5px}.bubble.assistant{background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:5px}.meta-actions{display:flex;gap:6px;margin:2px 0 9px}.meta-actions.user{justify-content:flex-end}.msgact{font-size:11px;color:var(--muted);padding:4px 7px;border:1px solid #242833;border-radius:8px}
+    .composer{border-top:1px solid var(--line);background:#0c0d12f5;padding:8px 10px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:flex-end}.composer textarea{min-height:44px;max-height:130px;resize:none}.send{width:44px;height:44px;border-radius:14px;background:var(--accent);font-size:18px;font-weight:900;flex:0 0 auto}.send:disabled{opacity:.4}
+    .progresswrap{display:none;padding:8px 12px;border-bottom:1px solid var(--line);background:#171923}.progresswrap.show{display:block}.progress{height:6px;background:#292c38;border-radius:999px;overflow:hidden;margin-top:7px}.progress>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#c6c0ff);transition:width .2s}.statusline{font-size:12px;color:var(--muted)}
+    .memory{padding:12px;border:1px solid var(--line);border-radius:14px;margin:9px 0;background:#101219}.stars{color:#ffd878;letter-spacing:1px;font-size:12px}.pin{color:var(--accent2)}
+    .switch{position:relative;width:48px;height:28px;border-radius:999px;background:#2b2e38;flex:0 0 auto}.switch.on{background:var(--accent)}.switch:after{content:"";position:absolute;width:22px;height:22px;border-radius:50%;background:white;top:3px;left:3px;transition:.15s}.switch.on:after{left:23px}
+    .modal{position:fixed;inset:0;background:#000a;z-index:100;display:none;align-items:flex-end}.modal.show{display:flex}.sheet{background:#11131a;border:1px solid var(--line);border-radius:24px 24px 0 0;width:100%;max-height:90%;overflow:auto;padding:18px 16px calc(22px + env(safe-area-inset-bottom));box-shadow:var(--shadow)}.sheet h2{margin:0 0 14px}.handle{width:44px;height:5px;border-radius:99px;background:#424652;margin:-8px auto 13px}
+    .model-option{padding:12px;border:1px solid var(--line);border-radius:14px;margin:8px 0}.model-option.selected{border-color:var(--accent);background:#1e1c34}.model-option strong{display:block;margin-bottom:3px}
+    .toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%) translateY(20px);background:#222631;border:1px solid #3a3f4e;padding:10px 14px;border-radius:12px;opacity:0;pointer-events:none;transition:.2s;z-index:200;max-width:86%;text-align:center;font-size:13px}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    .kv{display:grid;grid-template-columns:110px 1fr;gap:8px;font-size:13px}.kv div:nth-child(odd){color:var(--muted)}
+    .warning{border-left:3px solid var(--warn);padding-left:10px}.ok{color:var(--ok)}.dangertext{color:var(--danger)}
+    .seg{display:flex;background:#101219;border:1px solid var(--line);border-radius:12px;padding:3px;gap:3px}.seg button{flex:1;padding:8px;border-radius:9px;font-size:12px;color:var(--muted)}.seg button.active{background:#282b36;color:var(--text)}
+    @media(min-width:700px){.app{max-width:640px;margin:auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">Role<span>Mind</span></div>
+    <div class="grow"></div>
+    <button id="modelPill" class="pill">IA: sin cargar</button>
+    <button id="quickHelp" class="iconbtn" aria-label="Ayuda">?</button>
+  </header>
+
+  <main class="main">
+    <section id="viewCharacters" class="view active">
+      <div class="row between"><div class="title">Personajes</div><button id="newCharacter" class="btn primary small">+ Nuevo</button></div>
+      <div id="charactersList"></div>
+    </section>
+
+    <section id="viewChats" class="view">
+      <div class="row between"><div class="title">Conversaciones</div><button id="newChat" class="btn primary small">+ Chat</button></div>
+      <div id="chatsContext" class="muted" style="margin-bottom:10px"></div>
+      <div id="chatsList"></div>
+    </section>
+
+    <section id="viewMemories" class="view">
+      <div class="row between"><div class="title">Memoria</div><button id="newMemory" class="btn primary small">+ Recuerdo</button></div>
+      <div id="memoryContext" class="muted" style="margin-bottom:10px"></div>
+      <div class="card">
+        <div class="sub">Resumen de continuidad</div>
+        <div class="muted" style="margin:6px 0 10px">Se actualiza automáticamente cada cierto número de mensajes y ayuda a mantener la trama a largo plazo.</div>
+        <textarea id="chatSummary" class="field" placeholder="Todavía no hay resumen..."></textarea>
+        <div class="row" style="margin-top:8px"><button id="saveSummary" class="btn small">Guardar resumen</button><button id="forceMemoryPass" class="btn small">🧠 Actualizar con IA</button></div>
+      </div>
+      <div id="memoriesList"></div>
+    </section>
+
+    <section id="viewSettings" class="view">
+      <div class="title">Ajustes</div>
+      <div class="card">
+        <div class="sub">IA local</div>
+        <div class="muted" style="margin:6px 0 12px">El modelo se descarga al iPhone la primera vez. No usa una API de pago.</div>
+        <button id="chooseModel" class="btn" style="width:100%">Elegir modelo</button>
+        <button id="loadModel" class="btn primary" style="width:100%;margin-top:8px">Descargar / cargar IA</button>
+        <div id="gpuInfo" class="tiny" style="margin-top:10px"></div>
+      </div>
+      <div class="card">
+        <div class="row between"><div><div class="sub">Memoria automática</div><div class="muted">Extrae hechos útiles sin que tengas que marcarlos.</div></div><button id="autoMemorySwitch" class="switch"></button></div>
+        <label class="label">Cada cuántos mensajes del usuario</label>
+        <select id="memoryEvery" class="field"><option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="10">10</option></select>
+      </div>
+      <div class="card">
+        <div class="sub">Estilo general del rol</div>
+        <label class="label">Longitud</label><select id="globalLength" class="field"><option value="breve">Breve</option><option value="media">Media</option><option value="narrativa">Narrativa</option><option value="larga">Larga</option></select>
+        <label class="label">Iniciativa</label><select id="globalInitiative" class="field"><option value="prudente">Prudente</option><option value="equilibrada">Equilibrada</option><option value="alta">Alta</option></select>
+        <label class="label">Romance</label><select id="globalRomance" class="field"><option value="ninguno">Ninguno</option><option value="lento">Lento</option><option value="natural">Natural</option></select>
+        <label class="label">Pensamientos internos</label><select id="globalThoughts" class="field"><option value="pocos">Pocos</option><option value="normales">Normales</option><option value="abundantes">Abundantes</option></select>
+        <button id="saveSettings" class="btn primary" style="width:100%;margin-top:10px">Guardar ajustes</button>
+      </div>
+      <div class="card">
+        <div class="sub">Copia de seguridad</div>
+        <div class="muted" style="margin:6px 0 10px">Guarda personajes, chats, mensajes, recuerdos y ajustes en un archivo JSON.</div>
+        <div class="row"><button id="exportBackup" class="btn">Exportar</button><label class="btn" for="importBackup">Importar</label><input id="importBackup" type="file" accept="application/json" hidden></div>
+      </div>
+      <div class="card warning">
+        <div class="sub">Importante en iPhone</div>
+        <div class="muted" style="margin-top:6px">No borres los datos de Safari / esta web si no tienes backup: ahí viven tus conversaciones y memorias.</div>
+      </div>
+    </section>
+
+    <section id="viewChat" class="view chatview">
+      <div class="chathead"><button id="backFromChat" class="iconbtn">‹</button><div class="grow"><div id="chatTitle" class="sub"></div><div id="chatSubtitle" class="tiny"></div></div><button id="chatOptions" class="iconbtn">⋯</button></div>
+      <div id="progressWrap" class="progresswrap"><div id="progressText" class="statusline"></div><div class="progress"><div id="progressBar"></div></div></div>
+      <div id="messages" class="messages"></div>
+      <div class="composer"><textarea id="messageInput" class="field" placeholder="Escribe tu parte del rol..."></textarea><button id="sendMessage" class="send">↑</button></div>
+    </section>
+  </main>
+
+  <nav id="bottomNav" class="bottom">
+    <button class="tab active" data-view="Characters"><b>🎭</b>Personajes</button>
+    <button class="tab" data-view="Chats"><b>💬</b>Chats</button>
+    <button class="tab" data-view="Memories"><b>🧠</b>Memoria</button>
+    <button class="tab" data-view="Settings"><b>⚙️</b>Ajustes</button>
+  </nav>
+</div>
+
+<div id="modal" class="modal"><div id="sheet" class="sheet"><div class="handle"></div><div id="sheetContent"></div></div></div>
+<div id="toast" class="toast"></div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
