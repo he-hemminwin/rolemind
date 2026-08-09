@@ -5,12 +5,16 @@ const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toStri
 const esc = (s='') => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const MODELS = [
-  {id:'Llama-3.2-1B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 1B', note:'RECOMENDADO para este iPhone · ~879 MB de VRAM'},
-  {id:'SmolLM2-360M-Instruct-q4f16_1-MLC', name:'SmolLM2 · 360M', note:'Emergencia · ~376 MB · peor calidad narrativa'}
+  {id:'openai/gpt-oss-120b', name:'GPT-OSS · 120B', note:'RECOMENDADO · máxima calidad narrativa disponible en el plan gratuito de Groq'},
+  {id:'qwen/qwen3.6-27b', name:'Qwen 3.6 · 27B', note:'Alternativa potente · buena opción si quieres comparar estilo'},
+  {id:'openai/gpt-oss-20b', name:'GPT-OSS · 20B', note:'Más ligero · respaldo si alcanzas límites del modelo principal'}
 ];
 
 const DEFAULTS = {
   modelId: MODELS[0].id,
+  memoryModelId: 'openai/gpt-oss-20b',
+  workerUrl: '',
+  clientToken: '',
   autoMemory: true,
   memoryEvery: 6,
   globalLength: 'narrativa',
@@ -56,6 +60,7 @@ async function loadAll(){
   state.memories=await idbGetAll('memories');
   const s=await idbGetAll('settings');
   state.settings={...DEFAULTS,...Object.fromEntries(s.map(x=>[x.key,x.value]))};
+  if(!MODELS.some(m=>m.id===state.settings.modelId)) state.settings.modelId=DEFAULTS.modelId;
   state.currentCharacterId=state.settings.lastCharacterId || state.characters[0]?.id || null;
   state.currentChatId=state.settings.lastChatId && state.chats.some(c=>c.id===state.settings.lastChatId) ? state.settings.lastChatId : null;
 }
@@ -157,72 +162,78 @@ function openMemoryModal(id=null,prefill=''){
 $('#saveSummary').onclick=async()=>{const ch=currentChat();if(!ch)return;ch.summary=$('#chatSummary').value.trim();ch.updatedAt=now();await idbPut('chats',ch);toast('Resumen guardado')};
 $('#forceMemoryPass').onclick=async()=>{if(!currentChat())return;try{await ensureEngine();await runMemoryMaintenance(true);renderMemories()}catch(e){showError(e)}};
 
-// ---------- Settings / model ----------
+// ---------- Settings / IA online ----------
+function cleanWorkerUrl(v=''){return String(v).trim().replace(/\/+$/,'')}
+function selectedModel(){return MODELS.find(m=>m.id===state.settings.modelId)||MODELS[0]}
 function renderSettings(){
-  $('#memoryEvery').value=String(state.settings.memoryEvery);$('#globalLength').value=state.settings.globalLength;$('#globalInitiative').value=state.settings.globalInitiative;$('#globalRomance').value=state.settings.globalRomance;$('#globalThoughts').value=state.settings.globalThoughts;$('#autoMemorySwitch').classList.toggle('on',!!state.settings.autoMemory);
-  $('#gpuInfo').innerHTML=`WebGPU: ${navigator.gpu?'<span class="ok">disponible</span>':'<span class="dangertext">no detectado</span>'} · Modelo elegido: ${esc(MODELS.find(m=>m.id===state.settings.modelId)?.name||state.settings.modelId)}`;
+  $('#memoryEvery').value=String(state.settings.memoryEvery);
+  $('#globalLength').value=state.settings.globalLength;$('#globalInitiative').value=state.settings.globalInitiative;$('#globalRomance').value=state.settings.globalRomance;$('#globalThoughts').value=state.settings.globalThoughts;
+  $('#autoMemorySwitch').classList.toggle('on',!!state.settings.autoMemory);
+  if($('#workerUrl')) $('#workerUrl').value=state.settings.workerUrl||'';
+  if($('#clientToken')) $('#clientToken').value=state.settings.clientToken||'';
+  $('#gpuInfo').innerHTML=`Modelo narrativo: <b>${esc(selectedModel().name)}</b><br>Memoria: <b>GPT-OSS · 20B</b> · ${state.engine?'<span class="ok">puente conectado</span>':'<span class="muted">conexión no comprobada</span>'}`;
 }
 $('#autoMemorySwitch').onclick=async()=>{await saveSetting('autoMemory',!state.settings.autoMemory);renderSettings()};
-$('#saveSettings').onclick=async()=>{for(const [k,id] of [['memoryEvery','#memoryEvery'],['globalLength','#globalLength'],['globalInitiative','#globalInitiative'],['globalRomance','#globalRomance'],['globalThoughts','#globalThoughts']])await saveSetting(k,k==='memoryEvery'?Number($(id).value):$(id).value);toast('Ajustes guardados')};
+$('#saveSettings').onclick=async()=>{
+  for(const [k,id] of [['memoryEvery','#memoryEvery'],['globalLength','#globalLength'],['globalInitiative','#globalInitiative'],['globalRomance','#globalRomance'],['globalThoughts','#globalThoughts']]) await saveSetting(k,k==='memoryEvery'?Number($(id).value):$(id).value);
+  if($('#workerUrl')) await saveSetting('workerUrl',cleanWorkerUrl($('#workerUrl').value));
+  if($('#clientToken')) await saveSetting('clientToken',$('#clientToken').value.trim());
+  state.engine=null;state.engineModel=null;updateModelPill();renderSettings();toast('Ajustes guardados');
+};
+$('#generateClientToken')?.addEventListener('click',async()=>{
+  const bytes=new Uint8Array(24);crypto.getRandomValues(bytes);const token=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+  $('#clientToken').value=token;await saveSetting('clientToken',token);
+  try{await navigator.clipboard.writeText(token);toast('Token generado y copiado')}catch{toast('Token generado. Mantén pulsado para copiarlo')}
+});
+$('#copyClientToken')?.addEventListener('click',async()=>{
+  const token=$('#clientToken')?.value.trim();if(!token){toast('Primero genera o escribe un token');return}
+  try{await navigator.clipboard.writeText(token);toast('Token copiado')}catch{toast('Mantén pulsado el campo para copiarlo')}
+});
 function openModelModal(){
-  showModal(`<h2>Modelo de IA</h2><div class="muted">En este iPhone usa Llama 1B. Las pruebas con 1.7B y 3B superaron la memoria disponible y se han retirado.</div>${MODELS.map(m=>`<div class="model-option ${m.id===state.settings.modelId?'selected':''}" data-model="${m.id}"><strong>${esc(m.name)}</strong><span class="muted">${esc(m.note)}</span></div>`).join('')}<div class="warning muted" style="margin-top:12px">Cambiar de modelo no borra tus chats. El nuevo modelo tendrá que descargarse la primera vez.</div>`);
-  $$('.model-option').forEach(x=>x.onclick=async()=>{await saveSetting('modelId',x.dataset.model);state.engine=null;state.engineModel=null;closeModal();updateModelPill();renderSettings();toast('Modelo cambiado')});
+  showModal(`<h2>Modelo narrativo</h2><div class="muted">Estos modelos se ejecutan en GroqCloud; el iPhone ya no descarga el modelo. La memoria de RoleMind sigue guardada en tu dispositivo.</div>${MODELS.map(m=>`<div class="model-option ${m.id===state.settings.modelId?'selected':''}" data-model="${m.id}"><strong>${esc(m.name)}</strong><span class="muted">${esc(m.note)}</span></div>`).join('')}<div class="warning muted" style="margin-top:12px">Si un modelo alcanza su límite gratuito, RoleMind intentará automáticamente otro modelo permitido como respaldo.</div>`);
+  $$('.model-option').forEach(x=>x.onclick=async()=>{await saveSetting('modelId',x.dataset.model);state.engineModel=null;closeModal();updateModelPill();renderSettings();toast('Modelo cambiado')});
 }
 $('#chooseModel').onclick=openModelModal;$('#modelPill').onclick=openModelModal;
 $('#loadModel').onclick=async()=>{
-  const btn=$('#loadModel');
-  if(btn.disabled)return;
-  const original=btn.textContent;
-  btn.disabled=true;
-  btn.textContent='Preparando IA…';
-  toast('Iniciando IA local…');
-  try{
-    await ensureEngine();
-    toast('IA lista');
-  }catch(e){
-    setProgress(false);
-    showError(e);
-  }finally{
-    btn.disabled=false;
-    btn.textContent=original;
-  }
+  const btn=$('#loadModel');if(btn.disabled)return;const original=btn.textContent;btn.disabled=true;btn.textContent='Comprobando…';
+  if($('#workerUrl')) await saveSetting('workerUrl',cleanWorkerUrl($('#workerUrl').value));
+  if($('#clientToken')) await saveSetting('clientToken',$('#clientToken').value.trim());
+  try{await ensureEngine(true);toast('Conexión correcta. RoleMind está listo.')}catch(e){showError(e)}finally{btn.disabled=false;btn.textContent=original;setProgress(false);renderSettings()}
 };
-function updateModelPill(){const m=MODELS.find(x=>x.id===state.settings.modelId);$('#modelPill').textContent=state.engine?`IA: ${m?.name||'lista'}`:`IA: ${m?.name||'sin cargar'}`}
+function updateModelPill(){const m=selectedModel();$('#modelPill').textContent=state.settings.workerUrl?`IA: ${m.name}`:'IA: configurar'}
 function setProgress(show,text='',pct=0){$('#progressWrap').classList.toggle('show',show);$('#progressText').textContent=text;$('#progressBar').style.width=`${Math.max(0,Math.min(100,pct))}%`}
-async function ensureEngine(){
-  if(state.engine && state.engineModel===state.settings.modelId)return state.engine;
-  if(!navigator.gpu)throw new Error('WebGPU no está disponible en esta instalación. Abre RoleMind con iOS 26/Safari 26 o posterior y vuelve a probar.');
-
-  setProgress(true,'1/3 · Cargando WebLLM…',2);
-  let webllm;
-  try{
-    webllm=await import('https://esm.run/@mlc-ai/web-llm@0.2.84');
-  }catch(importErr){
-    throw new Error('No he podido cargar la librería WebLLM desde Internet. Comprueba la conexión Wi‑Fi y vuelve a intentarlo. Detalle: '+(importErr?.message||importErr));
+function apiError(message,status=0,body=null){const e=new Error(message);e.status=status;e.body=body;return e}
+async function ensureEngine(force=false){
+  if(state.engine&&!force)return state.engine;
+  const url=cleanWorkerUrl(state.settings.workerUrl),token=String(state.settings.clientToken||'').trim();
+  if(!url)throw new Error('Falta la URL del Cloudflare Worker. Ve a Ajustes y pégala en “URL del puente Cloudflare”.');
+  if(!token)throw new Error('Falta el token privado de RoleMind. Ve a Ajustes y genera/pega el mismo token que guardaste como secreto en Cloudflare.');
+  setProgress(true,'Conectando con el puente privado…',25);
+  let res;
+  try{res=await fetch(`${url}/health`,{method:'GET',headers:{'X-RoleMind-Token':token,'Accept':'application/json'},cache:'no-store'})}
+  catch(err){throw new Error('No puedo conectar con el Worker. Revisa la URL y tu conexión a Internet. '+(err?.message||''))}
+  let data={};try{data=await res.json()}catch{}
+  if(!res.ok)throw apiError(data?.error||`El Worker respondió con error ${res.status}.`,res.status,data);
+  state.engine={online:true};state.engineModel=state.settings.modelId;setProgress(false);updateModelPill();return state.engine;
+}
+async function callWorker({messages,model,purpose='role',max_tokens=800,temperature=.85,top_p=.95}){
+  await ensureEngine();const url=cleanWorkerUrl(state.settings.workerUrl),token=String(state.settings.clientToken||'').trim();
+  let res;try{res=await fetch(`${url}/chat`,{method:'POST',headers:{'Content-Type':'application/json','X-RoleMind-Token':token,'Accept':'application/json'},body:JSON.stringify({messages,model,purpose,max_tokens,temperature,top_p})})}
+  catch(err){state.engine=null;throw new Error('Se perdió la conexión con el puente de IA. '+(err?.message||''))}
+  let data={};try{data=await res.json()}catch{}
+  if(!res.ok){const msg=data?.error||`Error ${res.status} del servicio de IA.`;throw apiError(msg,res.status,data)}
+  return data;
+}
+async function roleCompletion(messages){
+  const chosen=state.settings.modelId;const order=[chosen,...MODELS.map(m=>m.id).filter(id=>id!==chosen)];let lastErr=null;
+  for(let i=0;i<order.length;i++){
+    try{
+      const out=await callWorker({messages,model:order[i],purpose:'role',max_tokens:maxTokens(),temperature:.88,top_p:.95});
+      if(i>0)toast(`Límite/fallo del modelo principal: usando ${MODELS.find(m=>m.id===order[i])?.name||order[i]}`,3500);
+      return out;
+    }catch(e){lastErr=e;if(![400,404,429,498,503].includes(Number(e.status)))throw e}
   }
-
-  setProgress(true,'2/3 · Preparando el motor local…',4);
-  const progressCb=(p)=>{
-    const raw=Number(p?.progress||0);
-    const pct=Number.isFinite(raw)?Math.max(5,raw*100):5;
-    setProgress(true,p?.text||'3/3 · Descargando el modelo al iPhone…',pct);
-  };
-
-  let worker=null;
-  try{
-    worker=new Worker(new URL('./ai-worker.js?v=2.2',import.meta.url),{type:'module'});
-    state.engine=await webllm.CreateWebWorkerMLCEngine(worker,state.settings.modelId,{initProgressCallback:progressCb});
-  }catch(workerErr){
-    console.warn('Web Worker no disponible; probando motor directo',workerErr);
-    try{worker?.terminate()}catch{}
-    setProgress(true,'Modo compatible · preparando IA directamente…',5);
-    state.engine=await webllm.CreateMLCEngine(state.settings.modelId,{initProgressCallback:progressCb});
-  }
-
-  state.engineModel=state.settings.modelId;
-  setProgress(false);
-  updateModelPill();
-  return state.engine;
+  throw lastErr||new Error('No hay ningún modelo disponible ahora mismo.');
 }
 
 // ---------- Chat ----------
@@ -250,16 +261,19 @@ async function generateAssistant(extraInstruction=''){
   if(state.generating)return;state.generating=true;$('#sendMessage').disabled=true;
   let placeholder=null;
   try{
-    const engine=await ensureEngine();const payload=buildPrompt(extraInstruction);
-    placeholder={id:uid(),chatId:state.currentChatId,role:'assistant',content:'',createdAt:now()};state.messages.push(placeholder);renderChat();
-    const chunks=await engine.chat.completions.create({messages:payload,temperature:.86,top_p:.93,max_tokens:maxTokens(),stream:true});
-    let text='';for await(const chunk of chunks){text+=chunk.choices?.[0]?.delta?.content||'';placeholder.content=text;const el=document.querySelector(`[data-msg="${placeholder.id}"]`);if(el){el.textContent=text;$('#messages').scrollTop=$('#messages').scrollHeight}}
-    placeholder.content=text.trim()||'(La IA no devolvió texto.)';await idbPut('messages',placeholder);const ch=currentChat();ch.updatedAt=now();await idbPut('chats',ch);renderChat();
+    await ensureEngine();
+    setProgress(true,'🧠 Recuperando recuerdos relevantes…',18);
+    const payload=await buildPrompt(extraInstruction);
+    placeholder={id:uid(),chatId:state.currentChatId,role:'assistant',content:'…',createdAt:now()};state.messages.push(placeholder);renderChat();
+    setProgress(true,'✍️ Escribiendo la respuesta…',55);
+    const out=await roleCompletion(payload);const text=String(out?.content||'').trim();
+    placeholder.content=text||'(La IA no devolvió texto.)';await idbPut('messages',placeholder);
+    const ch=currentChat();ch.updatedAt=now();await idbPut('chats',ch);renderChat();
     if(state.settings.autoMemory && (ch.userTurns||0)%Number(state.settings.memoryEvery||6)===0){await runMemoryMaintenance(false)}
   }catch(e){if(placeholder){state.messages=state.messages.filter(x=>x.id!==placeholder.id)}showError(e);renderChat()}
   finally{state.generating=false;$('#sendMessage').disabled=false;setProgress(false)}
 }
-function maxTokens(){return ({breve:300,media:500,narrativa:750,larga:950})[state.settings.globalLength]||700}
+function maxTokens(){return ({breve:420,media:650,narrativa:950,larga:1250})[state.settings.globalLength]||900}
 
 async function regenerateLast(){const list=chatMessages();const last=[...list].reverse().find(m=>m.role==='assistant');if(!last){toast('No hay respuesta que repetir');return}await regenerateFrom(last.id)}
 async function regenerateFrom(id){
@@ -272,74 +286,95 @@ async function regenerateFrom(id){
 // ---------- Prompt + memory retrieval ----------
 const STOP=new Set('de la el los las un una unos unas y o que en a al del por para con sin sobre se es son era eran fue fueron ser estar como más menos muy ya si sí no su sus mi mis tu tus este esta estos estas eso esa ese e ha han hay lo le les me te nos pero porque cuando donde qué quien quién desde hasta entre tras'.split(' '));
 function norm(s=''){return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9áéíóúüñ]+/gi,' ').trim()}
-function tokens(s=''){return norm(s).split(/\s+/).filter(w=>w.length>2&&!STOP.has(w)).slice(0,120)}
+function tokens(s=''){return norm(s).split(/\s+/).filter(w=>w.length>2&&!STOP.has(w)).slice(0,180)}
 function jaccard(a,b){const A=new Set(a),B=new Set(b);if(!A.size||!B.size)return 0;let n=0;for(const x of A)if(B.has(x))n++;return n/(A.size+B.size-n)}
-function relevantMemories(query){
-  const ch=currentChat(),char=currentCharacter();if(!ch||!char)return[];const qt=tokens(query);const candidates=state.memories.filter(m=>m.characterId===char.id && (!m.chatId||m.chatId===ch.id));
-  return candidates.map(m=>{const mt=tokens(`${m.content} ${m.tags||''}`);const overlap=jaccard(qt,mt);const proper=[...new Set(tokens(m.tags||''))].filter(t=>qt.includes(t)).length;const ageDays=(now()-m.createdAt)/86400000;const recency=Math.max(0,1-ageDays/120);const score=(m.pinned?6:0)+(m.importance||3)*.65+overlap*8+proper*1.2+recency*.35;return{m,score}}).sort((a,b)=>b.score-a.score).slice(0,7).map(x=>x.m);
+function candidateMemories(query,limit=20){
+  const ch=currentChat(),char=currentCharacter();if(!ch||!char)return[];const qt=tokens(query);
+  const candidates=state.memories.filter(m=>m.characterId===char.id && (!m.chatId||m.chatId===ch.id));
+  return candidates.map(m=>{const mt=tokens(`${m.content} ${m.tags||''}`);const overlap=jaccard(qt,mt);const proper=[...new Set(tokens(m.tags||''))].filter(t=>qt.includes(t)).length;const ageDays=(now()-m.createdAt)/86400000;const recency=Math.max(0,1-ageDays/180);const score=(m.pinned?12:0)+(m.importance||3)*1.1+overlap*12+proper*1.8+recency*.35;return{m,score}}).sort((a,b)=>b.score-a.score).slice(0,limit).map(x=>x.m);
 }
-function buildPrompt(extraInstruction=''){
+async function relevantMemories(query){
+  const candidates=candidateMemories(query,20);if(candidates.length<=8)return candidates;
+  const pinned=candidates.filter(m=>m.pinned);const compact=candidates.map((m,i)=>`M${i} | imp:${m.importance||3}${m.pinned?' | FIJO':''} | tags:${m.tags||'-'} | ${m.content.slice(0,330)}`).join('\n');
+  const prompt=[{role:'system',content:'Eres un recuperador de memoria para roleplay. Elige recuerdos que ayuden a responder al turno actual: mismos personajes, relaciones, promesas, conflictos, secretos, lugares, objetos, antecedentes o paralelismos relevantes. Prioriza FIJO y alta importancia. Devuelve SOLO JSON válido: {"ids":["M0","M3"]}. Máximo 8 ids. No expliques nada.'},{role:'user',content:`TURNO/CONTEXTO RECIENTE:\n${query.slice(0,2400)}\n\nRECUERDOS CANDIDATOS:\n${compact}`}];
+  try{
+    const out=await callWorker({messages:prompt,model:state.settings.memoryModelId,purpose:'rerank',max_tokens:220,temperature:.05,top_p:.8});const data=parseJSONLoose(out?.content||'');
+    const chosen=(data?.ids||[]).map(x=>String(x).match(/^M(\d+)$/)?.[1]).filter(x=>x!==undefined).map(i=>candidates[Number(i)]).filter(Boolean);
+    const result=[...pinned,...chosen].filter((m,i,a)=>a.findIndex(x=>x.id===m.id)===i).slice(0,8);return result.length?result:candidates.slice(0,8);
+  }catch(e){console.warn('Memory rerank failed; using local retrieval',e);return candidates.slice(0,8)}
+}
+async function buildPrompt(extraInstruction=''){
   const char=currentCharacter(),ch=currentChat(),all=chatMessages();
-  const recentText=all.slice(-5).map(m=>m.content).join('\n');const mems=relevantMemories(recentText);
-  const system=`ROLEPLAY. Tú interpretas a ${char.name}. El usuario interpreta EXCLUSIVAMENTE a ${char.userName||'su personaje'}.
+  const recentText=all.slice(-8).map(m=>`${m.role==='user'?char.userName:char.name}: ${m.content}`).join('\n');const mems=await relevantMemories(recentText);
+  const system=`Eres un motor de ROLEPLAY literario. Interpretas a ${char.name}. El usuario controla EXCLUSIVAMENTE a ${char.userName||'su personaje'}.
 
-CONTRATO DE SALIDA — OBLIGATORIO
-1. Escribe a ${char.name} en ${char.narration||'1ª persona pasado'}. Si es primera persona, usa “yo/me/mi”; NUNCA narres a ${char.name} en tercera persona.
-2. PROHIBIDO escribir cualquier acción, diálogo, pensamiento, emoción, reacción o decisión de ${char.userName||'el personaje del usuario'}. No escribas qué hace después de su último mensaje.
-3. Puedes controlar NPC secundarios presentes.
-4. Continúa la escena, no la resumas ni repitas lo que acaba de hacer el usuario.
-5. Termina la respuesta después de las acciones/diálogo de ${char.name} y NPC. Deja el turno abierto para el usuario.
-6. Mantén personalidad y continuidad por encima de fórmulas genéricas.
-7. Iniciativa: ${state.settings.globalInitiative}. Romance: ${state.settings.globalRomance}. Pensamientos: ${state.settings.globalThoughts}. Longitud: ${state.settings.globalLength}.
-${extraInstruction?`8. INSTRUCCIÓN DE ESTE TURNO: ${extraInstruction}\n`:''}
+REGLAS ABSOLUTAS
+- Narra a ${char.name} en ${char.narration||'1ª persona pasado'}. Respeta esa persona y tiempo verbal durante TODA la respuesta.
+- JAMÁS escribas acciones, diálogo, pensamientos, emociones, decisiones ni reacciones nuevas de ${char.userName||'el personaje del usuario'}. Solo puedes referirte a lo que el usuario YA escribió.
+- Sí puedes interpretar a ${char.name} y a los NPC secundarios presentes.
+- No repitas ni parafrasees innecesariamente el mensaje del usuario. Avanza la escena.
+- Mantén continuidad física: lugar, presentes, posiciones, objetos y hechos previos.
+- Los recuerdos proporcionados son hechos del rol; no los contradigas.
+- No conviertas automáticamente cada escena en romance. Romance: ${state.settings.globalRomance}.
+- Iniciativa: ${state.settings.globalInitiative}. Pensamientos internos: ${state.settings.globalThoughts}. Longitud: ${state.settings.globalLength}.
+- Diálogo natural y propio del personaje. Evita lenguaje genérico, explicaciones meta y preguntas de relleno.
+${extraInstruction?`- INSTRUCCIÓN ESPECIAL DE ESTE TURNO: ${extraInstruction}\n`:''}
 
-PERSONAJE IA
-${(char.persona||'Sin descripción adicional.').slice(0,1800)}
-${char.extra?`\nESTILO\n${char.extra.slice(0,900)}`:''}
+PERSONAJE IA — ${char.name}
+${(char.persona||'Sin descripción adicional.').slice(0,3200)}
+${char.extra?`\nDIRECTRICES DE ESTILO DEL PERSONAJE\n${char.extra.slice(0,2200)}`:''}
 
 PERSONAJE DEL USUARIO — INFORMACIÓN, NO LO CONTROLES
-${char.userName||'Usuario'}: ${(char.userDescription||'Sin descripción adicional.').slice(0,500)}
+${char.userName||'Usuario'}: ${(char.userDescription||'Sin descripción adicional.').slice(0,1200)}
 
-ESCENA
-Lugar: ${ch.location||'no especificado'} | Momento: ${ch.moment||'no especificado'} | Presentes: ${ch.present||'no especificado'}
-Hilos: ${(ch.threads||'ninguno').slice(0,450)}
+ESCENA ACTUAL
+Lugar: ${ch.location||'no especificado'}
+Momento: ${ch.moment||'no especificado'}
+Presentes: ${ch.present||'no especificado'}
+Hilos abiertos: ${(ch.threads||'ninguno').slice(0,1000)}
 
-CONTINUIDAD
-${(ch.summary||'Sin resumen todavía.').slice(0,850)}
+RESUMEN DE CONTINUIDAD
+${(ch.summary||'Sin resumen todavía.').slice(0,2400)}
 
-RECUERDOS ÚTILES
-${mems.length?mems.slice(0,5).map(m=>`- ${m.content.slice(0,240)}`).join('\n'):'- Ninguno.'}
+MEMORIA RECUPERADA PARA ESTE TURNO
+${mems.length?mems.map(m=>`- [${m.importance||3}★${m.pinned?', FIJO':''}] ${m.content.slice(0,420)}`).join('\n'):'- Ningún recuerdo adicional.'}
 
-ANTES DE RESPONDER, comprueba en silencio: ¿primera persona correcta? ¿he controlado a ${char.userName||'el usuario'}? Si la segunda respuesta es sí, reescribe antes de mostrarla.`;
-  // Keep recent chat within a conservative character budget for 4k-context mobile models.
-  const hist=[];let budget=4000;for(const m of [...all].reverse()){if(m.content.length>budget&&hist.length>=4)break;const content=m.content.slice(-Math.min(1100,budget));hist.push({role:m.role,content});budget-=content.length;if(budget<=0)break}hist.reverse();
+Antes de mostrar la respuesta, revisa silenciosamente: (1) ¿la narración está en la persona/tiempo exigidos? (2) ¿he escrito algo nuevo por ${char.userName||'el usuario'}? Si sí, corrígelo. Muestra únicamente el roleplay final.`;
+  const hist=[];let budget=12000;for(const m of [...all].reverse()){if(budget<=0&&hist.length>=8)break;const take=Math.min(1800,Math.max(400,budget));const content=m.content.slice(-take);hist.push({role:m.role,content});budget-=content.length;if(hist.length>=14)break}hist.reverse();
   return [{role:'system',content:system},...hist];
 }
 
 // ---------- Automatic memory maintenance ----------
 async function runMemoryMaintenance(force=false){
-  if(state.memoryPass || (state.generating && force))return;const ch=currentChat(),char=currentCharacter();if(!ch||!char)return;const msgs=chatMessages();if(msgs.length<4&&!force){return}
-  state.memoryPass=true;setProgress(true,'🧠 Ordenando recuerdos y continuidad…',82);
+  if(state.memoryPass || (state.generating && force))return;const ch=currentChat(),char=currentCharacter();if(!ch||!char)return;const msgs=chatMessages();if(msgs.length<4&&!force)return;
+  state.memoryPass=true;setProgress(true,'🧠 Consolidando memoria a largo plazo…',84);
   try{
-    const engine=await ensureEngine();const transcript=msgs.slice(-12).map(m=>`${m.role==='user'?char.userName:char.name}: ${m.content.slice(0,900)}`).join('\n');
-    const prompt=[{role:'system',content:`Actúas como gestor de memoria de un roleplay. Devuelve SOLO JSON válido, sin Markdown. No inventes hechos. Conserva cambios de relación, promesas, conflictos, revelaciones, preferencias, heridas, objetos importantes y acontecimientos que puedan importar en escenas futuras. Omite acciones triviales. El resumen debe actualizar la continuidad sin borrar hechos relevantes previos. Formato exacto: {"summary":"...","memories":[{"content":"...","importance":1,"tags":"..."}]}. importance va de 1 a 5. Máximo 3 recuerdos nuevos.`},{role:'user',content:`RESUMEN ANTERIOR:\n${(ch.summary||'(vacío)').slice(0,1700)}\n\nÚLTIMA PARTE DEL ROL:\n${transcript}\n\nDevuelve el JSON.`}];
-    const out=await engine.chat.completions.create({messages:prompt,temperature:.15,top_p:.8,max_tokens:420});const raw=out.choices?.[0]?.message?.content||'';const data=parseJSONLoose(raw);
-    if(data?.summary){ch.summary=String(data.summary).slice(0,2600);ch.updatedAt=now();await idbPut('chats',ch)}
-    if(Array.isArray(data?.memories))for(const item of data.memories.slice(0,3)){const content=String(item.content||'').trim();if(content.length<8||isDuplicateMemory(content))continue;const m={id:uid(),characterId:char.id,chatId:ch.id,content:content.slice(0,650),importance:Math.max(1,Math.min(5,Number(item.importance)||3)),pinned:false,tags:String(item.tags||'').slice(0,160),source:'auto',createdAt:now(),updatedAt:now()};await idbPut('memories',m);state.memories.push(m)}
-    if(force)toast('Memoria actualizada');
+    await ensureEngine();
+    const transcript=msgs.slice(-16).map(m=>`${m.role==='user'?char.userName:char.name}: ${m.content.slice(0,1200)}`).join('\n');
+    const existing=state.memories.filter(m=>m.characterId===char.id&&(!m.chatId||m.chatId===ch.id)).sort((a,b)=>(b.pinned-a.pinned)||(b.importance-a.importance)).slice(0,16).map((m,i)=>`E${i}: ${m.content.slice(0,350)} | tags:${m.tags||'-'}`).join('\n');
+    const prompt=[{role:'system',content:`Eres el archivista de memoria de un roleplay largo. Devuelve SOLO JSON válido. No inventes ni deduzcas sentimientos/hechos que no estén apoyados por el texto. Tu trabajo es conservar información que pueda importar dentro de cientos de mensajes: relaciones y su evolución, conflictos, promesas, secretos, preferencias, límites, heridas, capacidades, vínculos familiares, objetos, lugares, decisiones, consecuencias y acontecimientos relevantes. Omite movimientos triviales y frases pasajeras. Evita duplicar recuerdos ya existentes.\nFormato exacto: {"summary":"resumen acumulativo","memories":[{"content":"hecho autocontenido","importance":1,"tags":"personas, tema, lugar","scope":"chat|character","category":"relationship|event|promise|conflict|preference|person|object|place|secret|other"}]}. Máximo 4 recuerdos nuevos. Usa scope=character para hechos estables o relaciones que deben recordarse en cualquier chat del personaje; scope=chat para detalles propios de esta conversación.`},{role:'user',content:`RESUMEN ANTERIOR:\n${(ch.summary||'(vacío)').slice(0,3200)}\n\nRECUERDOS YA GUARDADOS (NO LOS DUPLIQUES):\n${existing||'(ninguno)'}\n\nTRAMO RECIENTE:\n${transcript}\n\nActualiza el resumen sin borrar hechos importantes anteriores y extrae solo recuerdos nuevos realmente útiles.`}];
+    const out=await callWorker({messages:prompt,model:state.settings.memoryModelId,purpose:'memory',max_tokens:700,temperature:.08,top_p:.8});const data=parseJSONLoose(out?.content||'');
+    if(data?.summary){ch.summary=String(data.summary).slice(0,5200);ch.updatedAt=now();await idbPut('chats',ch)}
+    if(Array.isArray(data?.memories))for(const item of data.memories.slice(0,4)){
+      const content=String(item.content||'').trim();if(content.length<8||isDuplicateMemory(content))continue;
+      const scope=String(item.scope||'chat').toLowerCase();const category=String(item.category||'other').toLowerCase();
+      const tags=[String(item.tags||'').trim(),category].filter(Boolean).join(', ').slice(0,220);
+      const m={id:uid(),characterId:char.id,chatId:scope==='character'?null:ch.id,content:content.slice(0,850),importance:Math.max(1,Math.min(5,Number(item.importance)||3)),pinned:false,tags,source:'auto-online',createdAt:now(),updatedAt:now()};await idbPut('memories',m);state.memories.push(m)
+    }
+    if(force)toast('Memoria a largo plazo actualizada');
   }catch(e){console.warn('Memory pass failed',e);if(force)showError(e)}finally{state.memoryPass=false;setProgress(false)}
 }
 function parseJSONLoose(raw){let s=raw.trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();const a=s.indexOf('{'),b=s.lastIndexOf('}');if(a>=0&&b>a)s=s.slice(a,b+1);try{return JSON.parse(s)}catch{return null}}
 function isDuplicateMemory(content){const nt=tokens(content);return state.memories.some(m=>jaccard(nt,tokens(m.content))>.72 || norm(m.content)===norm(content))}
 
 // ---------- Backup ----------
-$('#exportBackup').onclick=async()=>{const data={version:2,exportedAt:new Date().toISOString(),characters:state.characters,chats:state.chats,messages:state.messages,memories:state.memories,settings:state.settings};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`RoleMind-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup preparado')};
+$('#exportBackup').onclick=async()=>{const safeSettings={...state.settings,clientToken:''};const data={version:2.4,exportedAt:new Date().toISOString(),characters:state.characters,chats:state.chats,messages:state.messages,memories:state.memories,settings:safeSettings};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`RoleMind-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup preparado')};
 $('#importBackup').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const data=JSON.parse(await f.text());if(!Array.isArray(data.characters)||!Array.isArray(data.chats))throw new Error('No parece un backup de RoleMind');if(!confirm('Esto añadirá/reemplazará elementos con el mismo ID. ¿Continuar?'))return;for(const name of ['characters','chats','messages','memories'])for(const x of data[name]||[])await idbPut(name,x);for(const [key,value] of Object.entries(data.settings||{}))await idbPut('settings',{key,value});await loadAll();renderAll();toast('Backup importado')}catch(err){showError(err)}finally{e.target.value=''}};
 
 // ---------- Help ----------
-$('#quickHelp').onclick=()=>showModal(`<h2>Inicio rápido</h2><div class="card"><b>1. Crea un personaje</b><div class="muted" style="margin-top:5px">Define personalidad, tu personaje y estilo.</div></div><div class="card"><b>2. Crea una conversación</b><div class="muted" style="margin-top:5px">Pon lugar, presentes e hilos abiertos.</div></div><div class="card"><b>3. Carga la IA</b><div class="muted" style="margin-top:5px">Ajustes → Descargar/cargar IA. La primera descarga es grande; usa Wi‑Fi.</div></div><div class="card"><b>4. Rolea</b><div class="muted" style="margin-top:5px">Escribe REP para repetir la última respuesta. Usa 🧠 Recordar en cualquier mensaje para fijar algo manualmente.</div></div><button class="btn primary" style="width:100%" onclick="document.getElementById('modal').classList.remove('show')">Entendido</button>`);
+$('#quickHelp').onclick=()=>showModal(`<h2>Inicio rápido</h2><div class="card"><b>1. Personaje y escena</b><div class="muted" style="margin-top:5px">Tus personajes, chats y memorias siguen guardados en el iPhone.</div></div><div class="card"><b>2. Configura el puente</b><div class="muted" style="margin-top:5px">Ajustes → pega la URL de tu Cloudflare Worker y el token privado. Pulsa Probar conexión.</div></div><div class="card"><b>3. Rolea</b><div class="muted" style="margin-top:5px">El modelo grande se ejecuta online. RoleMind recupera recuerdos relevantes antes de cada turno y consolida memoria a largo plazo automáticamente.</div></div><div class="card"><b>4. REP y memoria manual</b><div class="muted" style="margin-top:5px">Escribe REP para regenerar. Usa 🧠 Recordar para fijar cualquier dato manualmente.</div></div><button class="btn primary" style="width:100%" onclick="document.getElementById('modal').classList.remove('show')">Entendido</button>`);
 
-function showError(e){console.error(e);const msg=String(e?.message||e||'Error desconocido');showModal(`<h2>Ha ocurrido un error</h2><div class="card dangertext" style="white-space:pre-wrap">${esc(msg)}</div><div class="muted">Si ocurre durante la carga, selecciona Llama 1B. Los modelos 1.7B y 3B se han retirado porque superaron la memoria disponible en este iPhone.</div>`)}
+function showError(e){console.error(e);let msg=String(e?.message||e||'Error desconocido');if(Number(e?.status)===429)msg+='\n\nHas alcanzado un límite gratuito temporal/diario del proveedor. RoleMind intenta modelos de respaldo automáticamente; si todos están limitados, habrá que esperar a que se reinicie la cuota.';showModal(`<h2>Ha ocurrido un error</h2><div class="card dangertext" style="white-space:pre-wrap">${esc(msg)}</div><div class="muted">Tus chats y recuerdos no se borran por un fallo de conexión. La clave de Groq permanece guardada como secreto en Cloudflare; RoleMind solo guarda en el iPhone el token privado del puente.</div>`)}
 function renderAll(){renderCharacters();renderChats();renderMemories();renderSettings();updateModelPill()}
 
 // ---------- Boot ----------

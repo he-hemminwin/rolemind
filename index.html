@@ -51,7 +51,7 @@
   <header class="top">
     <div class="brand">Role<span>Mind</span></div>
     <div class="grow"></div>
-    <button id="modelPill" class="pill">IA: sin cargar</button>
+    <button id="modelPill" class="pill">IA: configurar</button>
     <button id="quickHelp" class="iconbtn" aria-label="Ayuda">?</button>
   </header>
   <div id="progressWrap" class="progresswrap"><div id="progressText" class="statusline"></div><div class="progress"><div id="progressBar"></div></div></div>
@@ -83,10 +83,15 @@
     <section id="viewSettings" class="view">
       <div class="title">Ajustes</div>
       <div class="card">
-        <div class="sub">IA local</div>
-        <div class="muted" style="margin:6px 0 12px">El modelo se descarga al iPhone la primera vez. No usa una API de pago.</div>
-        <button id="chooseModel" class="btn" style="width:100%">Elegir modelo</button>
-        <button id="loadModel" class="btn primary" style="width:100%;margin-top:8px">Descargar / cargar IA</button>
+        <div class="sub">IA online gratuita</div>
+        <div class="muted" style="margin:6px 0 12px">RoleMind usa modelos grandes de Groq a través de tu puente privado de Cloudflare. No descarga el modelo al iPhone y no guarda tu clave de Groq en GitHub.</div>
+        <label class="label">URL del puente Cloudflare</label>
+        <input id="workerUrl" class="field" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="https://rolemind-ai.tu-subdominio.workers.dev">
+        <label class="label">Token privado de RoleMind</label>
+        <input id="clientToken" class="field" type="password" autocapitalize="none" autocomplete="off" placeholder="Genera uno y usa el mismo en Cloudflare">
+        <div class="row" style="margin-top:8px"><button id="generateClientToken" class="btn small grow">Generar token</button><button id="copyClientToken" class="btn small">Copiar</button></div>
+        <button id="chooseModel" class="btn" style="width:100%;margin-top:10px">Elegir modelo narrativo</button>
+        <button id="loadModel" class="btn primary" style="width:100%;margin-top:8px">Probar conexión</button>
         <div id="gpuInfo" class="tiny" style="margin-top:10px"></div>
       </div>
       <div class="card">
@@ -130,6 +135,6 @@
 
 <div id="modal" class="modal"><div id="sheet" class="sheet"><div class="handle"></div><div id="sheetContent"></div></div></div>
 <div id="toast" class="toast"></div>
-<script type="module" src="./app.js?v=2.3"></script>
+<script type="module" src="./app.js?v=2.4"></script>
 </body>
 </html>
