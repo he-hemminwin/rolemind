@@ -5,10 +5,8 @@ const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toStri
 const esc = (s='') => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const MODELS = [
-  {id:'Llama-3.2-1B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 1B', note:'Seguro · más ligero · ~879 MB de VRAM'},
-  {id:'SmolLM2-1.7B-Instruct-q4f16_1-MLC', name:'SmolLM2 · 1.7B', note:'Prueba recomendada · intermedio · ~1.77 GB de VRAM'},
-  {id:'Llama-3.2-3B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 3B', note:'Muy pesado · ~2.26 GB · puede cerrar Safari en iPhone'},
-  {id:'SmolLM2-360M-Instruct-q4f32_1-MLC', name:'SmolLM2 · 360M', note:'Modo emergencia · muy ligero · calidad menor'}
+  {id:'Llama-3.2-1B-Instruct-q4f16_1-MLC', name:'Llama 3.2 · 1B', note:'RECOMENDADO para este iPhone · ~879 MB de VRAM'},
+  {id:'SmolLM2-360M-Instruct-q4f16_1-MLC', name:'SmolLM2 · 360M', note:'Emergencia · ~376 MB · peor calidad narrativa'}
 ];
 
 const DEFAULTS = {
@@ -167,7 +165,7 @@ function renderSettings(){
 $('#autoMemorySwitch').onclick=async()=>{await saveSetting('autoMemory',!state.settings.autoMemory);renderSettings()};
 $('#saveSettings').onclick=async()=>{for(const [k,id] of [['memoryEvery','#memoryEvery'],['globalLength','#globalLength'],['globalInitiative','#globalInitiative'],['globalRomance','#globalRomance'],['globalThoughts','#globalThoughts']])await saveSetting(k,k==='memoryEvery'?Number($(id).value):$(id).value);toast('Ajustes guardados')};
 function openModelModal(){
-  showModal(`<h2>Modelo de IA</h2><div class="muted">En iPhone empieza por 1B. Si funciona, prueba SmolLM2 1.7B. El 3B puede superar la memoria disponible.</div>${MODELS.map(m=>`<div class="model-option ${m.id===state.settings.modelId?'selected':''}" data-model="${m.id}"><strong>${esc(m.name)}</strong><span class="muted">${esc(m.note)}</span></div>`).join('')}<div class="warning muted" style="margin-top:12px">Cambiar de modelo no borra tus chats. El nuevo modelo tendrá que descargarse la primera vez.</div>`);
+  showModal(`<h2>Modelo de IA</h2><div class="muted">En este iPhone usa Llama 1B. Las pruebas con 1.7B y 3B superaron la memoria disponible y se han retirado.</div>${MODELS.map(m=>`<div class="model-option ${m.id===state.settings.modelId?'selected':''}" data-model="${m.id}"><strong>${esc(m.name)}</strong><span class="muted">${esc(m.note)}</span></div>`).join('')}<div class="warning muted" style="margin-top:12px">Cambiar de modelo no borra tus chats. El nuevo modelo tendrá que descargarse la primera vez.</div>`);
   $$('.model-option').forEach(x=>x.onclick=async()=>{await saveSetting('modelId',x.dataset.model);state.engine=null;state.engineModel=null;closeModal();updateModelPill();renderSettings();toast('Modelo cambiado')});
 }
 $('#chooseModel').onclick=openModelModal;$('#modelPill').onclick=openModelModal;
@@ -283,39 +281,38 @@ function relevantMemories(query){
 function buildPrompt(extraInstruction=''){
   const char=currentCharacter(),ch=currentChat(),all=chatMessages();
   const recentText=all.slice(-5).map(m=>m.content).join('\n');const mems=relevantMemories(recentText);
-  const system=`Eres ${char.name} en un roleplay narrativo con el usuario, que controla exclusivamente a ${char.userName||'su personaje'}.
+  const system=`ROLEPLAY. Tú interpretas a ${char.name}. El usuario interpreta EXCLUSIVAMENTE a ${char.userName||'su personaje'}.
 
-REGLAS INNEGOCIABLES DEL ROL
-- Nunca escribas acciones, pensamientos, emociones internas, decisiones ni diálogo de ${char.userName||'el personaje del usuario'}. Deja siempre espacio real para que el usuario decida qué hace.
-- Tú controlas a ${char.name} y a NPC secundarios cuando sea necesario.
-- Mantén continuidad estricta. No inventes que alguien entra, sale, sabe algo o tiene un objeto si contradice el contexto.
-- No resumas la escena: interprétala.
-- Evita pedir permiso constantemente. Con iniciativa ${state.settings.globalInitiative}, haz avanzar la escena de forma natural dentro de la personalidad del personaje.
-- Romance: ${state.settings.globalRomance}. Pensamientos internos: ${state.settings.globalThoughts}. Longitud: ${state.settings.globalLength}.
-- Narración preferida: ${char.narration||'1ª persona pasado'}.
-${extraInstruction?`- INSTRUCCIÓN PARA ESTA RESPUESTA: ${extraInstruction}\n`:''}
+CONTRATO DE SALIDA — OBLIGATORIO
+1. Escribe a ${char.name} en ${char.narration||'1ª persona pasado'}. Si es primera persona, usa “yo/me/mi”; NUNCA narres a ${char.name} en tercera persona.
+2. PROHIBIDO escribir cualquier acción, diálogo, pensamiento, emoción, reacción o decisión de ${char.userName||'el personaje del usuario'}. No escribas qué hace después de su último mensaje.
+3. Puedes controlar NPC secundarios presentes.
+4. Continúa la escena, no la resumas ni repitas lo que acaba de hacer el usuario.
+5. Termina la respuesta después de las acciones/diálogo de ${char.name} y NPC. Deja el turno abierto para el usuario.
+6. Mantén personalidad y continuidad por encima de fórmulas genéricas.
+7. Iniciativa: ${state.settings.globalInitiative}. Romance: ${state.settings.globalRomance}. Pensamientos: ${state.settings.globalThoughts}. Longitud: ${state.settings.globalLength}.
+${extraInstruction?`8. INSTRUCCIÓN DE ESTE TURNO: ${extraInstruction}\n`:''}
 
-PERSONAJE DE LA IA
-${(char.persona||'Sin descripción adicional.').slice(0,2200)}
-${char.extra?`\nINSTRUCCIONES DE ESTILO\n${char.extra.slice(0,1200)}`:''}
+PERSONAJE IA
+${(char.persona||'Sin descripción adicional.').slice(0,1800)}
+${char.extra?`\nESTILO\n${char.extra.slice(0,900)}`:''}
 
-PERSONAJE DEL USUARIO (solo información; NO lo controles)
-Nombre: ${char.userName||'Usuario'}
-${(char.userDescription||'').slice(0,700)}
+PERSONAJE DEL USUARIO — INFORMACIÓN, NO LO CONTROLES
+${char.userName||'Usuario'}: ${(char.userDescription||'Sin descripción adicional.').slice(0,500)}
 
-ESCENA ACTUAL
-Lugar: ${ch.location||'no especificado'}
-Momento: ${ch.moment||'no especificado'}
-Presentes: ${ch.present||'no especificado'}
-Hilos abiertos: ${(ch.threads||'ninguno especificado').slice(0,700)}
+ESCENA
+Lugar: ${ch.location||'no especificado'} | Momento: ${ch.moment||'no especificado'} | Presentes: ${ch.present||'no especificado'}
+Hilos: ${(ch.threads||'ninguno').slice(0,450)}
 
-RESUMEN DE CONTINUIDAD
-${(ch.summary||'Todavía no existe resumen.').slice(0,1500)}
+CONTINUIDAD
+${(ch.summary||'Sin resumen todavía.').slice(0,850)}
 
-RECUERDOS RELEVANTES
-${mems.length?mems.map(m=>`- [${m.importance}/5${m.pinned?', FIJO':''}] ${m.content.slice(0,350)}`).join('\n'):'- Ninguno recuperado.'}`;
+RECUERDOS ÚTILES
+${mems.length?mems.slice(0,5).map(m=>`- ${m.content.slice(0,240)}`).join('\n'):'- Ninguno.'}
+
+ANTES DE RESPONDER, comprueba en silencio: ¿primera persona correcta? ¿he controlado a ${char.userName||'el usuario'}? Si la segunda respuesta es sí, reescribe antes de mostrarla.`;
   // Keep recent chat within a conservative character budget for 4k-context mobile models.
-  const hist=[];let budget=5600;for(const m of [...all].reverse()){if(m.content.length>budget&&hist.length>=4)break;const content=m.content.slice(-Math.min(1500,budget));hist.push({role:m.role,content});budget-=content.length;if(budget<=0)break}hist.reverse();
+  const hist=[];let budget=4000;for(const m of [...all].reverse()){if(m.content.length>budget&&hist.length>=4)break;const content=m.content.slice(-Math.min(1100,budget));hist.push({role:m.role,content});budget-=content.length;if(budget<=0)break}hist.reverse();
   return [{role:'system',content:system},...hist];
 }
 
@@ -342,7 +339,7 @@ $('#importBackup').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;t
 // ---------- Help ----------
 $('#quickHelp').onclick=()=>showModal(`<h2>Inicio rápido</h2><div class="card"><b>1. Crea un personaje</b><div class="muted" style="margin-top:5px">Define personalidad, tu personaje y estilo.</div></div><div class="card"><b>2. Crea una conversación</b><div class="muted" style="margin-top:5px">Pon lugar, presentes e hilos abiertos.</div></div><div class="card"><b>3. Carga la IA</b><div class="muted" style="margin-top:5px">Ajustes → Descargar/cargar IA. La primera descarga es grande; usa Wi‑Fi.</div></div><div class="card"><b>4. Rolea</b><div class="muted" style="margin-top:5px">Escribe REP para repetir la última respuesta. Usa 🧠 Recordar en cualquier mensaje para fijar algo manualmente.</div></div><button class="btn primary" style="width:100%" onclick="document.getElementById('modal').classList.remove('show')">Entendido</button>`);
 
-function showError(e){console.error(e);const msg=String(e?.message||e||'Error desconocido');showModal(`<h2>Ha ocurrido un error</h2><div class="card dangertext" style="white-space:pre-wrap">${esc(msg)}</div><div class="muted">Si es durante la carga del modelo, vuelve a Llama 1B. Si 1B funciona, prueba SmolLM2 1.7B. Evita Llama 3B si la app se cierra o vuelve al inicio.</div>`)}
+function showError(e){console.error(e);const msg=String(e?.message||e||'Error desconocido');showModal(`<h2>Ha ocurrido un error</h2><div class="card dangertext" style="white-space:pre-wrap">${esc(msg)}</div><div class="muted">Si ocurre durante la carga, selecciona Llama 1B. Los modelos 1.7B y 3B se han retirado porque superaron la memoria disponible en este iPhone.</div>`)}
 function renderAll(){renderCharacters();renderChats();renderMemories();renderSettings();updateModelPill()}
 
 // ---------- Boot ----------
