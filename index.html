@@ -106,6 +106,10 @@
         <select id="memoryEvery" class="field"><option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="10">10</option></select>
       </div>
       <div class="card">
+        <div class="sub">Protección estricta del personaje</div>
+        <div class="muted" style="margin-top:6px">Activa por defecto: RoleMind hace una segunda revisión de cada respuesta para impedir que la IA invente acciones, emociones, microgestos o reacciones de tu personaje. Esta revisión usa el modelo de memoria y sigue dentro del plan gratuito mientras no superes sus límites.</div>
+      </div>
+      <div class="card">
         <div class="sub">Estilo general del rol</div>
         <label class="label">Longitud</label><select id="globalLength" class="field"><option value="breve">Breve</option><option value="media">Media</option><option value="narrativa">Narrativa</option><option value="larga">Larga</option></select>
         <label class="label">Iniciativa</label><select id="globalInitiative" class="field"><option value="prudente">Prudente</option><option value="equilibrada">Equilibrada</option><option value="alta">Alta</option></select>
@@ -141,6 +145,6 @@
 
 <div id="modal" class="modal"><div id="sheet" class="sheet"><div class="handle"></div><div id="sheetContent"></div></div></div>
 <div id="toast" class="toast"></div>
-<script type="module" src="./app.js?v=2.5"></script>
+<script type="module" src="./app.js?v=2.6"></script>
 </body>
 </html>

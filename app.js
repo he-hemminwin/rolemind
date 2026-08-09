@@ -317,8 +317,12 @@ async function generateAssistant(extraInstruction=''){
     setProgress(true,'🧠 Recuperando recuerdos relevantes…',18);
     const payload=await buildPrompt(extraInstruction);
     placeholder={id:uid(),chatId:state.currentChatId,role:'assistant',content:'…',createdAt:now()};state.messages.push(placeholder);renderChat();
-    setProgress(true,'✍️ Escribiendo la respuesta…',55);
-    const out=await roleCompletion(payload);const text=String(out?.content||'').trim();
+    setProgress(true,'✍️ Escribiendo la respuesta…',52);
+    const out=await roleCompletion(payload);let text=String(out?.content||'').trim();
+    if(text){
+      setProgress(true,'🛡️ Revisando que no controle tu personaje…',78);
+      text=await strictRoleGuard(text);
+    }
     placeholder.content=text||'(La IA no devolvió texto.)';await idbPut('messages',placeholder);
     const ch=currentChat();ch.updatedAt=now();await idbPut('chats',ch);renderChat();
     if(state.settings.autoMemory && (ch.userTurns||0)%Number(state.settings.memoryEvery||6)===0){await runMemoryMaintenance(false)}
@@ -366,9 +370,9 @@ REGLAS ABSOLUTAS
 FRONTERA DE CONTROL — PRIORIDAD MÁXIMA
 - ${char.userName||'El personaje del usuario'} pertenece EXCLUSIVAMENTE al usuario. JAMÁS escribas por esa persona.
 - No inventes para ${char.userName||'el personaje del usuario'} acciones, diálogo, pensamientos, emociones, intenciones, decisiones, silencios, miradas, postura, respiración, tono, expresiones, movimientos ni microgestos.
-- OBSERVAR NO SIGNIFICA INVENTAR: ${char.name} solo puede observar un gesto o reacción de ${char.userName||'el usuario'} si ese gesto/reacción aparece EXPLÍCITAMENTE en el mensaje del usuario o en el historial proporcionado. Si no está escrito, no existe todavía.
+- OBSERVAR NO SIGNIFICA INVENTAR: ${char.name} solo puede tratar como real un gesto, acción o reacción de ${char.userName||'el usuario'} si aparece EXPLÍCITAMENTE en un mensaje escrito por el USUARIO o en su ficha. NUNCA uses una respuesta anterior de la IA como prueba de algo que hizo/sintió ${char.userName||'el usuario'}. Si el usuario no lo escribió, no existe todavía.
 - Está prohibido fabricar algo como "sus hombros se relajaron", "tamborileó los dedos", "me sostuvo la mirada", "se quedó callada" o "aflojó la postura" salvo que el usuario ya haya escrito exactamente ese comportamiento.
-- Puedes hacer que ${char.name} interprete o dude sobre hechos OBSERVADOS (por ejemplo: "me pregunté si aquello era nerviosismo"), pero debe quedar como hipótesis interna, nunca como un hecho nuevo sobre ${char.userName||'el usuario'}.
+- ${char.userName||'El personaje del usuario'} es una CAJA CERRADA: no conoces sus emociones o intenciones salvo que el usuario las haya declarado. ${char.name} puede especular sobre un hecho observado, pero debe usar incertidumbre explícita ("me pregunté si...", "podía ser X o podía ser Y") y jamás cerrar esa hipótesis como verdad.
 - Después de las acciones o palabras de ${char.name} y los NPC, DETENTE antes de narrar la respuesta de ${char.userName||'el usuario'}. Deja ese turno abierto para el usuario.
 - Sí puedes interpretar a ${char.name} y a los NPC secundarios presentes.
 - No repitas ni parafrasees innecesariamente el mensaje del usuario. Avanza la escena.
@@ -376,6 +380,7 @@ FRONTERA DE CONTROL — PRIORIDAD MÁXIMA
 - Los recuerdos proporcionados son hechos del rol; no los contradigas.
 - No conviertas automáticamente cada escena en romance. Romance: ${state.settings.globalRomance}.
 - Iniciativa: ${state.settings.globalInitiative}. Pensamientos internos: ${state.settings.globalThoughts}. Longitud: ${state.settings.globalLength}.
+- Fidelidad de personaje por encima de frases ingeniosas genéricas. El humor, amenaza, ternura o sarcasmo deben salir de la personalidad descrita, no de tópicos de IA. Evita eslóganes, frases motivacionales, lenguaje de coach y ocurrencias que podrían decir personajes distintos.
 - Diálogo natural y propio del personaje. Evita lenguaje genérico, explicaciones meta y preguntas de relleno.
 ${extraInstruction?`- INSTRUCCIÓN ESPECIAL DE ESTE TURNO: ${extraInstruction}\n`:''}
 
@@ -385,6 +390,10 @@ ${char.extra?`\nDIRECTRICES DE ESTILO DEL PERSONAJE\n${char.extra.slice(0,2200)}
 
 PERSONAJE DEL USUARIO — INFORMACIÓN, NO LO CONTROLES
 ${char.userName||'Usuario'}: ${(char.userDescription||'Sin descripción adicional.').slice(0,1200)}
+
+EVIDENCIA RECIENTE CONFIRMADA POR EL USUARIO
+${all.filter(m=>m.role==='user').slice(-8).map(m=>`- ${m.content.slice(0,900)}`).join('\n')||'- Ninguna.'}
+IMPORTANTE: cualquier conducta de ${char.userName||'el usuario'} que aparezca SOLO en mensajes de la IA no está confirmada y no puede reutilizarse como hecho.
 
 ESCENA ACTUAL
 Lugar: ${ch.location||'no especificado'}
@@ -398,9 +407,30 @@ ${(ch.summary||'Sin resumen todavía.').slice(0,2400)}
 MEMORIA RECUPERADA PARA ESTE TURNO
 ${mems.length?mems.map(m=>`- [${m.importance||3}★${m.pinned?', FIJO':''}] ${m.content.slice(0,420)}`).join('\n'):'- Ningún recuerdo adicional.'}
 
-Antes de mostrar la respuesta, revisa silenciosamente: (1) ¿la narración está en la persona/tiempo exigidos? (2) ¿he atribuido a ${char.userName||'el usuario'} un gesto, reacción, emoción, silencio, mirada o acción que NO esté escrito en el historial? (3) ¿he narrado la reacción de ${char.userName||'el usuario'} a algo que acaba de hacer ${char.name}? Si 2 o 3 es sí, ELIMINA esa parte antes de responder. Muestra únicamente el roleplay final.`;
+Antes de mostrar la respuesta, revisa silenciosamente: (1) ¿la narración está en la persona/tiempo exigidos? (2) ¿he atribuido a ${char.userName||'el usuario'} un gesto, reacción, emoción, sensación, intención, silencio, mirada o acción que NO haya escrito EL USUARIO? (3) ¿estoy usando como evidencia algo inventado por una respuesta anterior de la IA? (4) ¿he narrado la reacción de ${char.userName||'el usuario'} a algo que acaba de hacer ${char.name}? Si 2, 3 o 4 es sí, ELIMINA esa parte o conviértela únicamente en una hipótesis interna incierta sin inventar conducta. Muestra solo el roleplay final.`;
   const hist=[];let budget=12000;for(const m of [...all].reverse()){if(budget<=0&&hist.length>=8)break;const take=Math.min(1800,Math.max(400,budget));const content=m.content.slice(-take);hist.push({role:m.role,content});budget-=content.length;if(hist.length>=14)break}hist.reverse();
   return [{role:'system',content:system},...hist];
+}
+
+// ---------- Strict user-character boundary guard ----------
+function userOnlyEvidence(){
+  const char=currentCharacter(),all=chatMessages();if(!char)return'';
+  const userMsgs=all.filter(m=>m.role==='user').slice(-14).map((m,i)=>`U${i+1}: ${m.content.slice(0,1200)}`).join('\n');
+  return `FICHA EXPLÍCITA DEL PERSONAJE DEL USUARIO:\n${(char.userDescription||'(sin ficha)').slice(0,1800)}\n\nMENSAJES ESCRITOS POR EL USUARIO (ÚNICA EVIDENCIA VÁLIDA DE SUS ACCIONES/REACCIONES):\n${userMsgs||'(ninguno)'}`;
+}
+async function strictRoleGuard(candidate){
+  const char=currentCharacter();if(!char||!candidate)return candidate;
+  const userName=char.userName||'el personaje del usuario';
+  const evidence=userOnlyEvidence();
+  const prompt=[
+    {role:'system',content:`Eres un editor de continuidad para roleplay. Tu trabajo NO es reescribir por gusto: conserva casi literalmente la respuesta candidata y modifica SOLO lo necesario para cumplir estas reglas absolutas.\n\nREGLA CENTRAL: ${userName} es una CAJA CERRADA y pertenece exclusivamente al usuario.\n- SOLO los mensajes escritos por el usuario y su ficha explícita son evidencia válida sobre ${userName}.\n- Las respuestas anteriores de la IA NO son evidencia válida sobre acciones, gestos, silencios, miradas, emociones, postura, respiración, tono, intenciones o reacciones de ${userName}.\n- Elimina cualquier acción, microgesto, emoción, sensación, intención, interpretación factual o reacción de ${userName} que no esté explícitamente respaldada por la evidencia.\n- No escribas que ${userName} "sintió", "pareció", "esperaba", "quería", "se relajó", "se tensó", "mantuvo la mirada", "guardó silencio", "tamborileó", "sonrió", etc. salvo que esté confirmado en la evidencia.\n- El personaje IA SÍ puede formular hipótesis internas, pero deben quedar inequívocamente como incertidumbre propia: "me pregunté si...", "podía ser X o podía ser Y". Una hipótesis nunca puede transformarse en hecho.\n- Después de una acción o frase del personaje IA/NPC, no narres la reacción posterior de ${userName}. Deja el turno abierto.\n- Respeta estrictamente la voz narrativa pedida para ${char.name}: ${char.narration||'1ª persona pasado'}. Si es primera persona, elimina narración del tipo "${char.name} hizo/dijo" y usa yo/me/mi.\n- Conserva diálogos, acciones del personaje IA, NPC, atmósfera, longitud, humor y tensión siempre que no infrinjan lo anterior.\n- NO añadas hechos nuevos. NO suavices al personaje. NO conviertas el texto en resumen.\n\nDevuelve ÚNICAMENTE el roleplay corregido, sin explicaciones, sin JSON, sin encabezados.`},
+    {role:'user',content:`EVIDENCIA AUTORIZADA SOBRE ${userName}:\n${evidence}\n\nRESPUESTA CANDIDATA A REVISAR:\n${candidate.slice(0,7000)}\n\nHaz una edición mínima. Si una frase atribuye a ${userName} algo no demostrado, elimínala o conviértela en una duda interna del personaje IA sin inventar nueva conducta.`}
+  ];
+  try{
+    const out=await callWorker({messages:prompt,model:state.settings.memoryModelId,purpose:'role-guard',max_tokens:Math.min(1500,Math.max(500,maxTokens()+250)),temperature:.08,top_p:.82});
+    const cleaned=String(out?.content||'').trim().replace(/^```(?:text|markdown)?\s*/i,'').replace(/```$/,'').trim();
+    return cleaned||candidate;
+  }catch(e){console.warn('Strict role guard failed; using original reply',e);return candidate}
 }
 
 // ---------- Automatic memory maintenance ----------
@@ -427,7 +457,7 @@ function parseJSONLoose(raw){let s=raw.trim().replace(/^```(?:json)?/i,'').repla
 function isDuplicateMemory(content){const nt=tokens(content);return state.memories.some(m=>jaccard(nt,tokens(m.content))>.72 || norm(m.content)===norm(content))}
 
 // ---------- Backup ----------
-$('#exportBackup').onclick=async()=>{const safeSettings={...state.settings,clientToken:''};const data={version:2.5,exportedAt:new Date().toISOString(),characters:state.characters,chats:state.chats,messages:state.messages,memories:state.memories,settings:safeSettings};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`RoleMind-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup preparado')};
+$('#exportBackup').onclick=async()=>{const safeSettings={...state.settings,clientToken:''};const data={version:2.6,exportedAt:new Date().toISOString(),characters:state.characters,chats:state.chats,messages:state.messages,memories:state.memories,settings:safeSettings};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`RoleMind-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Backup preparado')};
 $('#importBackup').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const data=JSON.parse(await f.text());if(!Array.isArray(data.characters)||!Array.isArray(data.chats))throw new Error('No parece un backup de RoleMind');if(!confirm('Esto añadirá/reemplazará elementos con el mismo ID. ¿Continuar?'))return;for(const name of ['characters','chats','messages','memories'])for(const x of data[name]||[])await idbPut(name,x);for(const [key,value] of Object.entries(data.settings||{}))await idbPut('settings',{key,value});await loadAll();renderAll();toast('Backup importado')}catch(err){showError(err)}finally{e.target.value=''}};
 
 // ---------- Help ----------
